@@ -324,6 +324,52 @@ class TestTailwindConfigGenerator:
         assert "--force" in result.stderr
         assert output_path.read_text() == existing
 
+    def test_cli_refuses_sibling_config_extension_without_force(self, tmp_path):
+        """A default .ts write must not create a second config beside .js."""
+        existing_path = tmp_path / "tailwind.config.js"
+        existing = "// existing JavaScript project config\nmodule.exports = {}\n"
+        existing_path.write_text(existing)
+        output_path = tmp_path / "tailwind.config.ts"
+        script = Path(__file__).parent.parent / "tailwind_config_gen.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script), "--colors", "brand:#3b82f6"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 1
+        assert "tailwind.config.js" in result.stderr
+        assert "--force" in result.stderr
+        assert existing_path.read_text() == existing
+        assert not output_path.exists()
+
+    def test_cli_force_allows_target_beside_sibling_config(self, tmp_path):
+        """The explicit force opt-in also overrides cross-extension detection."""
+        existing_path = tmp_path / "tailwind.config.js"
+        existing = "// existing JavaScript project config\nmodule.exports = {}\n"
+        existing_path.write_text(existing)
+        output_path = tmp_path / "tailwind.config.ts"
+        script = Path(__file__).parent.parent / "tailwind_config_gen.py"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--colors",
+                "brand:#3b82f6",
+                "--force",
+            ],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert existing_path.read_text() == existing
+        assert "brand" in output_path.read_text()
+
     def test_cli_force_overwrites_existing_config(self, tmp_path):
         """The CLI must wire --force through to the generator."""
         output_path = tmp_path / "tailwind.config.ts"

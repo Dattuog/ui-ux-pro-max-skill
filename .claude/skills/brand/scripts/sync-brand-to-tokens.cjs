@@ -43,10 +43,46 @@ const GENERATE_TOKENS_SCRIPT = path.resolve(__dirname, '..', '..', 'design-syste
  * Find project files that already act as design-token sources.
  */
 function findExistingTokenSources(projectRoot) {
-  const sources = [];
+  const sources = new Set();
   const addIfPresent = (relativePath) => {
     if (fs.existsSync(path.resolve(projectRoot, relativePath))) {
-      sources.push(relativePath);
+      sources.add(relativePath);
+    }
+  };
+
+  const scanCssSource = (absolutePath, visited = new Set()) => {
+    const normalizedPath = path.resolve(absolutePath);
+    const relativePath = path.relative(projectRoot, normalizedPath);
+    if (
+      visited.has(normalizedPath) ||
+      relativePath.startsWith('..') ||
+      path.isAbsolute(relativePath) ||
+      !fs.existsSync(normalizedPath)
+    ) {
+      return;
+    }
+
+    visited.add(normalizedPath);
+    const content = fs.readFileSync(normalizedPath, 'utf-8');
+    const uncommented = content.replace(/\/\*[\s\S]*?\*\//g, '');
+    const hasRootTokens = /:root\b[^{}]*\{[^}]*--[A-Za-z0-9_-]+\s*:/.test(uncommented);
+    const hasTailwindTheme = /@theme(?:\s+[A-Za-z-]+)?\s*\{[^}]*--[A-Za-z0-9_-]+\s*:/.test(uncommented);
+    if (hasRootTokens || hasTailwindTheme) {
+      sources.add(relativePath.split(path.sep).join('/'));
+    }
+
+    const importPattern = /@import\s+(?:url\(\s*)?(['"])([^'"]+)\1\s*\)?[^;]*;/g;
+    for (const match of uncommented.matchAll(importPattern)) {
+      const importTarget = match[2].split(/[?#]/, 1)[0];
+      let importedPath;
+      if (importTarget.startsWith('.')) {
+        importedPath = path.resolve(path.dirname(normalizedPath), importTarget);
+      } else if (importTarget.startsWith('/')) {
+        importedPath = path.resolve(projectRoot, `.${importTarget}`);
+      } else {
+        continue;
+      }
+      scanCssSource(importedPath, visited);
     }
   };
 
@@ -55,24 +91,22 @@ function findExistingTokenSources(projectRoot) {
 
   for (const relativePath of CSS_TOKEN_SOURCES) {
     const absolutePath = path.resolve(projectRoot, relativePath);
-    if (!fs.existsSync(absolutePath)) continue;
-    const content = fs.readFileSync(absolutePath, 'utf-8');
-    const uncommented = content.replace(/\/\*[\s\S]*?\*\//g, '');
-    if (/:root\b[^{}]*\{[^}]*--[A-Za-z0-9_-]+\s*:/.test(uncommented)) {
-      sources.push(relativePath);
-    }
+    scanCssSource(absolutePath);
   }
 
   for (const relativePath of TAILWIND_CONFIGS) {
     const absolutePath = path.resolve(projectRoot, relativePath);
     if (!fs.existsSync(absolutePath)) continue;
     const content = fs.readFileSync(absolutePath, 'utf-8');
-    if (/\btheme\s*:\s*\{[\s\S]*?\bcolors\s*:/.test(content)) {
-      sources.push(relativePath);
+    const hasInlineColors = /\btheme\s*:\s*\{[\s\S]*?\bcolors\s*:/.test(content);
+    const hasPreset = /\bpresets\s*:/.test(content);
+    const hasThemeSpread = /\btheme\s*:\s*\{[\s\S]*?\.\.\.[A-Za-z_$]/.test(content);
+    if (hasInlineColors || hasPreset || hasThemeSpread) {
+      sources.add(relativePath);
     }
   }
 
-  return sources;
+  return [...sources];
 }
 
 /**

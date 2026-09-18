@@ -17,6 +17,12 @@ from typing import Any, Dict, List, Optional
 # optional subpath. Only allows alphanumeric, hyphens, dots, underscores,
 # and forward slashes — no quotes, parens, or semicolons.
 _VALID_PLUGIN_NAME = re.compile(r'^(@[a-zA-Z0-9_-]+/)?[a-zA-Z0-9_-]+(/[a-zA-Z0-9_.-]+)*$')
+_TAILWIND_CONFIG_NAMES = (
+    "tailwind.config.js",
+    "tailwind.config.cjs",
+    "tailwind.config.mjs",
+    "tailwind.config.ts",
+)
 
 
 class TailwindConfigGenerator:
@@ -275,11 +281,23 @@ module.exports = {{
             Tuple of (success, message)
         """
         try:
-            if self.output_path.exists() and not self.force:
+            existing_paths = []
+            if self.output_path.name in _TAILWIND_CONFIG_NAMES:
+                existing_paths = [
+                    self.output_path.parent / name
+                    for name in _TAILWIND_CONFIG_NAMES
+                    if (self.output_path.parent / name).exists()
+                ]
+            elif self.output_path.exists():
+                existing_paths = [self.output_path]
+
+            if existing_paths and not self.force:
+                existing = ", ".join(str(path) for path in existing_paths)
                 return (
                     False,
-                    f"Configuration already exists: {self.output_path}. "
-                    "Refusing to overwrite it; re-run with --force to replace it.",
+                    f"Tailwind configuration already exists: {existing}. "
+                    "Refusing to create or overwrite a competing config; "
+                    "re-run with --force only if this is intentional.",
                 )
 
             config_content = self.generate_config_string()

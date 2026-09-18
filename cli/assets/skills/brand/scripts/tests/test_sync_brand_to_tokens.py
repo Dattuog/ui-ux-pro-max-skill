@@ -232,6 +232,76 @@ def test_refuses_tailwind_theme_colors_without_force(tmp_path):
     assert not (tmp_path / "assets" / "design-tokens.json").exists()
 
 
+def test_refuses_tailwind_v4_theme_source_without_force(tmp_path):
+    """Tailwind v4 @theme variables are an existing project token source."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "src").mkdir()
+    shutil.copy(BRAND_STARTER, tmp_path / "docs" / "brand-guidelines.md")
+    (tmp_path / "src" / "index.css").write_text(
+        "@theme {\n  --color-brand-500: #2563eb;\n}\n"
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "src/index.css" in result.stderr
+    assert not (tmp_path / "assets" / "design-tokens.json").exists()
+
+
+def test_refuses_token_source_imported_by_common_css_entry(tmp_path):
+    """Local CSS imports must be followed to their actual token source."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "src" / "styles").mkdir(parents=True)
+    shutil.copy(BRAND_STARTER, tmp_path / "docs" / "brand-guidelines.md")
+    (tmp_path / "src" / "index.css").write_text(
+        '@import "./styles/theme.css";\n'
+    )
+    (tmp_path / "src" / "styles" / "theme.css").write_text(
+        "@theme {\n  --color-brand-500: #2563eb;\n}\n"
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "src/styles/theme.css" in result.stderr
+    assert not (tmp_path / "assets" / "design-tokens.json").exists()
+
+
+def test_ignores_external_css_imports(tmp_path):
+    """Remote and package imports are not project-owned token sources."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "src").mkdir()
+    shutil.copy(BRAND_STARTER, tmp_path / "docs" / "brand-guidelines.md")
+    (tmp_path / "src" / "index.css").write_text(
+        '@import "https://example.com/theme.css";\n'
+        '@import "tailwindcss";\n'
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (tmp_path / "assets" / "design-tokens.json").exists()
+
+
+def test_refuses_tailwind_config_with_sibling_preset_without_force(tmp_path):
+    """A delegated Tailwind theme must not be treated as token-free."""
+    (tmp_path / "docs").mkdir()
+    shutil.copy(BRAND_STARTER, tmp_path / "docs" / "brand-guidelines.md")
+    (tmp_path / "tailwind.config.js").write_text(
+        "const preset = require('./tailwind.preset');\n"
+        "module.exports = { presets: [preset] };\n"
+    )
+    (tmp_path / "tailwind.preset.js").write_text(
+        "module.exports = { theme: { colors: { brand: '#2563eb' } } };\n"
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "tailwind.config.js" in result.stderr
+    assert not (tmp_path / "assets" / "design-tokens.json").exists()
+
+
 def test_force_allows_sync_with_existing_css_token_source(tmp_path):
     """The explicit force flag overrides token-source detection."""
     (tmp_path / "docs").mkdir()

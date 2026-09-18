@@ -50,10 +50,12 @@ node scripts/sync-brand-to-tokens.cjs
 ```
 
 If the script reports an existing token source, inspect the named file before
-continuing. Do not create a parallel token system beside project CSS or
-Tailwind theme colors. Use `--force` only when the detected source is the
-managed `assets/design-tokens.*` output from an earlier sync and replacing it
-is intentional:
+continuing. Detection covers `:root` custom properties, Tailwind v4 `@theme`
+variables in common CSS entry points and their local imports, and Tailwind
+theme colors or presets. Do not create a parallel token system beside those
+sources. Use `--force` only when the detected source is the managed
+`assets/design-tokens.*` output from an earlier sync and replacing it is
+intentional:
 ```bash
 node scripts/sync-brand-to-tokens.cjs --force
 ```
