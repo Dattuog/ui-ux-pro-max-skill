@@ -7,6 +7,7 @@
  * Usage:
  *   node sync-brand-to-tokens.cjs
  *   node sync-brand-to-tokens.cjs --dry-run
+ *   node sync-brand-to-tokens.cjs --force
  */
 
 const fs = require('fs');
@@ -17,10 +18,62 @@ const { execFileSync } = require('child_process');
 const BRAND_GUIDELINES = 'docs/brand-guidelines.md';
 const DESIGN_TOKENS_JSON = 'assets/design-tokens.json';
 const DESIGN_TOKENS_CSS = 'assets/design-tokens.css';
+const CSS_TOKEN_SOURCES = [
+  'src/index.css',
+  'src/globals.css',
+  'src/styles/globals.css',
+  'src/styles/tokens.css',
+  'src/app/globals.css',
+  'app/globals.css',
+  'styles/globals.css',
+  'styles/tokens.css'
+];
+const TAILWIND_CONFIGS = [
+  'tailwind.config.js',
+  'tailwind.config.cjs',
+  'tailwind.config.mjs',
+  'tailwind.config.ts'
+];
 // Sibling sub-skill, resolved from this file's location so it works in every
 // install context (plugin cache, project or --global CLI install), not only
 // when the process runs from a project root that contains .claude/skills/.
 const GENERATE_TOKENS_SCRIPT = path.resolve(__dirname, '..', '..', 'design-system', 'scripts', 'generate-tokens.cjs');
+
+/**
+ * Find project files that already act as design-token sources.
+ */
+function findExistingTokenSources(projectRoot) {
+  const sources = [];
+  const addIfPresent = (relativePath) => {
+    if (fs.existsSync(path.resolve(projectRoot, relativePath))) {
+      sources.push(relativePath);
+    }
+  };
+
+  addIfPresent(DESIGN_TOKENS_JSON);
+  addIfPresent(DESIGN_TOKENS_CSS);
+
+  for (const relativePath of CSS_TOKEN_SOURCES) {
+    const absolutePath = path.resolve(projectRoot, relativePath);
+    if (!fs.existsSync(absolutePath)) continue;
+    const content = fs.readFileSync(absolutePath, 'utf-8');
+    const uncommented = content.replace(/\/\*[\s\S]*?\*\//g, '');
+    if (/:root\b[^{}]*\{[^}]*--[A-Za-z0-9_-]+\s*:/.test(uncommented)) {
+      sources.push(relativePath);
+    }
+  }
+
+  for (const relativePath of TAILWIND_CONFIGS) {
+    const absolutePath = path.resolve(projectRoot, relativePath);
+    if (!fs.existsSync(absolutePath)) continue;
+    const content = fs.readFileSync(absolutePath, 'utf-8');
+    if (/\btheme\s*:\s*\{[\s\S]*?\bcolors\s*:/.test(content)) {
+      sources.push(relativePath);
+    }
+  }
+
+  return sources;
+}
 
 /**
  * Extract color info from brand guidelines markdown
@@ -211,16 +264,32 @@ function updateDesignTokens(tokens, colors) {
  */
 function main() {
   const dryRun = process.argv.includes('--dry-run');
+  const force = process.argv.includes('--force');
+  const projectRoot = process.cwd();
 
   console.log('🔄 Syncing brand guidelines → design tokens\n');
 
   // Read brand guidelines
-  const guidelinesPath = path.resolve(process.cwd(), BRAND_GUIDELINES);
+  const guidelinesPath = path.resolve(projectRoot, BRAND_GUIDELINES);
   if (!fs.existsSync(guidelinesPath)) {
     console.error(`❌ Brand guidelines not found: ${guidelinesPath}`);
     process.exit(1);
   }
   const guidelinesContent = fs.readFileSync(guidelinesPath, 'utf-8');
+
+  const existingSources = findExistingTokenSources(projectRoot);
+  if (existingSources.length > 0 && !force) {
+    const details = existingSources.map(source => `   - ${source}`).join('\n');
+    const message =
+      `Existing design-token source${existingSources.length === 1 ? '' : 's'} detected:\n${details}\n` +
+      'Refusing to create or replace token files. Review the detected source and re-run with --force only if replacement is intentional.';
+    if (dryRun) {
+      console.warn(`⚠️  ${message}\n`);
+    } else {
+      console.error(`❌ ${message}`);
+      process.exit(1);
+    }
+  }
 
   // Extract colors
   const colors = extractColorsFromMarkdown(guidelinesContent);
@@ -230,7 +299,7 @@ function main() {
   console.log(`   Accent: ${colors.accent.name} (${colors.accent.base})\n`);
 
   // Read existing tokens
-  const tokensPath = path.resolve(process.cwd(), DESIGN_TOKENS_JSON);
+  const tokensPath = path.resolve(projectRoot, DESIGN_TOKENS_JSON);
   let tokens = {};
   if (fs.existsSync(tokensPath)) {
     tokens = JSON.parse(fs.readFileSync(tokensPath, 'utf-8'));
@@ -247,6 +316,7 @@ function main() {
   }
 
   // Write updated tokens
+  fs.mkdirSync(path.dirname(tokensPath), { recursive: true });
   fs.writeFileSync(tokensPath, JSON.stringify(tokens, null, 2));
   console.log(`✅ Updated: ${DESIGN_TOKENS_JSON}`);
 

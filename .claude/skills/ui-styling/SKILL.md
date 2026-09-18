@@ -228,6 +228,12 @@ Generate tailwind.config.js with custom theme:
 python scripts/tailwind_config_gen.py --colors brand:blue --fonts display:Inter
 ```
 
+The generator refuses to replace an existing config. Review the target first,
+then pass `--force` only when overwriting it is intentional:
+```bash
+python scripts/tailwind_config_gen.py --colors brand:blue --force
+```
+
 ## Best Practices
 
 1. **Component Composition**: Build complex UIs from simple, composable primitives

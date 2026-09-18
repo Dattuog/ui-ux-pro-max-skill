@@ -27,6 +27,7 @@ class TailwindConfigGenerator:
         typescript: bool = True,
         framework: str = "react",
         output_path: Optional[Path] = None,
+        force: bool = False,
     ):
         """
         Initialize generator.
@@ -35,10 +36,12 @@ class TailwindConfigGenerator:
             typescript: If True, generate .ts config, else .js
             framework: Framework name (react, vue, svelte, nextjs)
             output_path: Output file path (default: auto-detect)
+            force: If True, allow replacing an existing output file
         """
         self.typescript = typescript
         self.framework = framework
         self.output_path = output_path or self._default_output_path()
+        self.force = force
         self.config: Dict[str, Any] = self._base_config()
 
     def _default_output_path(self) -> Path:
@@ -272,6 +275,13 @@ module.exports = {{
             Tuple of (success, message)
         """
         try:
+            if self.output_path.exists() and not self.force:
+                return (
+                    False,
+                    f"Configuration already exists: {self.output_path}. "
+                    "Refusing to overwrite it; re-run with --force to replace it.",
+                )
+
             config_content = self.generate_config_string()
 
             self.output_path.write_text(config_content)
@@ -382,6 +392,12 @@ Examples:
         help="Validate config without writing file",
     )
 
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing output file",
+    )
+
     args = parser.parse_args()
 
     # Initialize generator
@@ -389,6 +405,7 @@ Examples:
         typescript=not args.js,
         framework=args.framework,
         output_path=args.output,
+        force=args.force,
     )
 
     # Add custom colors
@@ -465,7 +482,7 @@ Examples:
 
     # Write config
     success, message = generator.write_config()
-    print(message)
+    print(message, file=sys.stdout if success else sys.stderr)
     sys.exit(0 if success else 1)
 
 

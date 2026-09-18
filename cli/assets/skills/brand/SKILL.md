@@ -53,6 +53,12 @@ node scripts/sync-brand-to-tokens.cjs
 node scripts/inject-brand-context.cjs --json | head -20
 ```
 
+The sync stops when it detects existing token files, `:root` custom properties
+in common CSS entry points, or Tailwind theme colors. Review the reported
+source before proceeding. If the detected files are the managed
+`assets/design-tokens.*` outputs from an earlier sync and replacing them is
+intentional, re-run with `--force`.
+
 **Files synced:**
 - `docs/brand-guidelines.md` → Source of truth
 - `assets/design-tokens.json` → Token definitions
